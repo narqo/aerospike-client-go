@@ -23,13 +23,6 @@ import (
 const (
 	SizeOfInt32 = uintptr(4)
 	SizeOfInt64 = uintptr(8)
-
-	uint64sz = int(8)
-	uint32sz = int(4)
-	uint16sz = int(2)
-
-	float32sz = int(4)
-	float64sz = int(8)
 )
 
 var SizeOfInt uintptr
@@ -61,22 +54,12 @@ func BytesToHexString(buf []byte) string {
 
 // LittleBytesToInt32 converts a slice into int32; only maximum of 4 bytes will be used
 func LittleBytesToInt32(buf []byte, offset int) int32 {
-	l := len(buf[offset:])
-	if l > uint32sz {
-		l = uint32sz
-	}
-	r := int32(binary.LittleEndian.Uint32(buf[offset : offset+l]))
-	return r
+	return int32(binary.LittleEndian.Uint32(buf[offset:]))
 }
 
 // BytesToInt64 converts a slice into int64; only maximum of 8 bytes will be used
 func BytesToInt64(buf []byte, offset int) int64 {
-	l := len(buf[offset:])
-	if l > uint64sz {
-		l = uint64sz
-	}
-	r := int64(binary.BigEndian.Uint64(buf[offset : offset+l]))
-	return r
+	return int64(binary.BigEndian.Uint64(buf[offset:]))
 }
 
 func VarBytesToInt64(buf []byte, offset int, len int) int64 {
@@ -98,30 +81,30 @@ func VarBytesToInt64(buf []byte, offset int, len int) int64 {
 
 // BytesToInt32 converts a slice into int32; only maximum of 4 bytes will be used
 func BytesToInt32(buf []byte, offset int) int32 {
-	return int32(binary.BigEndian.Uint32(buf[offset : offset+uint32sz]))
+	return int32(binary.BigEndian.Uint32(buf[offset:]))
 }
 
 // BytesToUint32 converts a slice into uint32; only maximum of 4 bytes will be used
 func BytesToUint32(buf []byte, offset int) uint32 {
-	return binary.BigEndian.Uint32(buf[offset : offset+uint32sz])
+	return binary.BigEndian.Uint32(buf[offset:])
 }
 
 // BytesToInt16 converts a slice of bytes to an int16
 func BytesToInt16(buf []byte, offset int) int16 {
-	return int16(binary.BigEndian.Uint16(buf[offset : offset+uint16sz]))
+	return int16(binary.BigEndian.Uint16(buf[offset:]))
 }
 
 func BytesToUint16(buf []byte, offset int) uint16 {
-	return binary.BigEndian.Uint16(buf[offset : offset+uint16sz])
+	return binary.BigEndian.Uint16(buf[offset:])
 }
 
 func BytesToFloat32(buf []byte, offset int) float32 {
-	bits := binary.BigEndian.Uint32(buf[offset : offset+float32sz])
+	bits := binary.BigEndian.Uint32(buf[offset:])
 	return math.Float32frombits(bits)
 }
 
 func BytesToFloat64(buf []byte, offset int) float64 {
-	bits := binary.BigEndian.Uint64(buf[offset : offset+float64sz])
+	bits := binary.BigEndian.Uint64(buf[offset:])
 	return math.Float64frombits(bits)
 }
 
