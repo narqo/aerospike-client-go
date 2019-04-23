@@ -16,6 +16,7 @@ package aerospike
 
 import (
 	"reflect"
+	"time"
 
 	. "github.com/aerospike/aerospike-client-go/logger"
 
@@ -38,6 +39,8 @@ type readCommand struct {
 
 	// pointer to the object that's going to be unmarshalled
 	object *reflect.Value
+
+	target interface{}
 
 	replicaSequence int
 }
@@ -70,6 +73,98 @@ func (cmd *readCommand) writeBuffer(ifc command) error {
 
 func (cmd *readCommand) getNode(ifc command) (*Node, error) {
 	return cmd.cluster.getReadNode(&cmd.partition, cmd.policy.ReplicaPolicy, &cmd.replicaSequence)
+}
+
+type Decoder struct {
+	dataBuffer   []byte
+	cursorBuffer []byte
+	opCursor     int
+	opCount      int
+	start        int
+	offset       int
+}
+
+func (dec *Decoder) Next() (name string, ok bool) {
+	dec.start = dec.offset
+	ok = dec.opCursor < dec.opCount
+	dec.opCursor++
+
+	nameSize := int(dec.dataBuffer[dec.offset+7])
+	name = string(dec.dataBuffer[dec.offset+8 : dec.offset+8+nameSize]) // TODO: don't copy, use unsafe_string
+
+	dec.offset += 8 + nameSize
+
+	return name, ok
+}
+
+func (dec *Decoder) read() {
+	opSize := int(Buffer.BytesToUint32(dec.dataBuffer, dec.start))
+	//particleType := int(dec.dataBuffer[dec.start+5]) // type of data to follow
+	nameSize := int(dec.dataBuffer[dec.start+7])
+	length := opSize - (4 + nameSize)
+	dec.cursorBuffer = dec.dataBuffer[dec.offset : dec.offset+length]
+	dec.offset += length
+}
+
+func (dec *Decoder) Int() (v int64) {
+	dec.read()
+	return Buffer.VarBytesToInt64(dec.cursorBuffer, 0, len(dec.cursorBuffer))
+}
+
+func (dec *Decoder) String() string {
+	dec.read()
+	return string(dec.cursorBuffer)
+}
+
+func (dec *Decoder) Strings() []string {
+	panic("not implemented")
+}
+
+type BinsDecoder interface {
+	DecodeBins(dec *Decoder) error
+}
+
+type AeroTracker struct {
+	AppToken    string
+	ParentToken string // empty for root trackers
+	Token       string
+	Label       string // part of tracker name, used as link if no external ID available
+	ExternalId  string // optional, if set should be used as link from parent
+	PartnerId   string
+	Level       int // 1..4
+	ChildCount  int // how many child trackers does this tracker have
+
+	// for debugging
+	ParentTokens   []string  // all parent tokens (up to 3)
+	ParentLabels   []string  // initial parent labels from when this tracker was created, as we never update these (up to 3)
+	Log            []string  // textual representation of changes to this tracker, with timestamps
+	LabelUpdatedAt time.Time // last time tracker was relabeled
+
+	// aerospike generation to see how often we overwrite records
+	generation int
+}
+
+func (at *AeroTracker) DecodeBins(dec *Decoder) error {
+	var (
+		name string
+		ok   = true
+	)
+	for ok {
+		name, ok = dec.Next()
+		switch name {
+		case "appToken":
+			at.AppToken = dec.String()
+		case "tokenP":
+			at.ParentToken = dec.String()
+
+		case "parentLs":
+			at.ParentTokens = dec.Strings()
+
+		case "gen":
+			at.generation = dec.Int()
+		}
+	}
+	return nil
 }
 
 func (cmd *readCommand) parseResult(ifc command, conn *Connection) error {
@@ -179,6 +274,15 @@ func (cmd *readCommand) parseRecord(
 			fieldSize := int(Buffer.BytesToUint32(cmd.dataBuffer, receiveOffset))
 			receiveOffset += (4 + fieldSize)
 		}
+	}
+
+	if cmd.target != nil {
+		dec := Decoder{
+			dataBuffer: cmd.dataBuffer,
+			offset:     receiveOffset,
+		}
+		err := cmd.target.(BinsDecoder).DecodeBins(&dec)
+		return nil, err
 	}
 
 	if opCount > 0 {
